@@ -17,14 +17,22 @@ def tf_resize(tensor, axis, size):
 
 class TransD(Model):
 	r'''
-	TransD constructs a dynamic mapping matrix for each entity-relation pair by considering the diversity of entities and relations simultaneously. 
+	TransD constructs a dynamic mapping matrix for each entity-relation pair by considering the diversity of entities and relations simultaneously.
 	Compared with TransR/CTransR, TransD has fewer parameters and has no matrix vector multiplication.
 	'''
-	def _transfer(self, e, t, r):
-		return tf.nn.l2_normalize(tf_resize(e, -1, r.get_shape()[-1]) + tf.reduce_sum(e * t, -1, keepdims = True) * r, -1)
 
-	def _calc(self, h, t, r):
-		return abs(h + r - t)
+	def _transfer(self, ent_e, ent_p, rel_p):
+		rel_size = rel_p.get_shape()[-1]
+		return rel_p * tf.reduce_sum(ent_e * ent_p, axis = -1, keepdims = True) + tf_resize(ent_e, axis = -1, size = rel_size);
+
+	def _calc(self, ent1_t, ent2_t, rel_e, norm):
+		if norm == (1, 1):
+			return -tf.reduce_sum(tf.abs(ent1_t + rel_e - ent2_t), axis = -1, keepdims = True)
+		elif norm == (2, 2):
+			return -tf.reduce_sum(tf.square(ent1_t + rel_e - ent2_t), axis = -1, keepdims = True)
+		elif norm[0] == norm[1]:
+			return -tf.reduce_sum(tf.pow(ent1_t + rel_e - ent2_t, norm[0]), axis = -1, keepdims = True)
+		return -tf.norm(tf.pow(ent1_t + rel_e - ent2_t, norm[0]), ord = norm[1], axis = -1, keepdims = True)
 
 	def embedding_def(self):
 		#Obtaining the initial configuration of the model
@@ -42,55 +50,61 @@ class TransD(Model):
 	def loss_def(self):
 		#Obtaining the initial configuration of the model
 		config = self.get_config()
-		#To get positive triples and negative triples for training
-		#The shapes of pos_h, pos_t are (batch_size, 1, ent_size)
-		#The shapes of pos_r is (batch_size, 1, rel_size)
-		#The shapes of neg_h, neg_t (batch_size, negative_ent + negative_rel, ent_size)
-		#The shapes of neg_r is (batch_size, negative_ent + negative_rel, rel_size)
+		#Get positive triples and negative triples for training
+		#The shapes of pos_h, pos_t, pos_r are (batch_size, 1)
+		#The shapes of neg_h, neg_t, neg_r are (batch_size, negative_ent + negative_rel)
 		pos_h, pos_t, pos_r = self.get_positive_instance(in_batch = True)
 		neg_h, neg_t, neg_r = self.get_negative_instance(in_batch = True)
-		#Embedding entities and relations of triples, e.g. pos_h_e, pos_t_e and pos_r_e are embeddings for positive triples
+		#Embedding entities and relations of positive and negative triples
+		#The shapes of pos_h_e, pos_t_e are (batch_size, 1, ent_size)
+		#The shape of pos_r_e is (batch_size, 1, rel_size)
+		#The shapes of neg_h_e, neg_t_e are (batch_size, negative_ent + negative_rel, ent_size)
+		#The shape of neg_r_e is (batch_size, negative_ent + negative_rel, rel_size)
 		pos_h_e = tf.nn.embedding_lookup(self.ent_embeddings, pos_h)
 		pos_t_e = tf.nn.embedding_lookup(self.ent_embeddings, pos_t)
 		pos_r_e = tf.nn.embedding_lookup(self.rel_embeddings, pos_r)
 		neg_h_e = tf.nn.embedding_lookup(self.ent_embeddings, neg_h)
 		neg_t_e = tf.nn.embedding_lookup(self.ent_embeddings, neg_t)
 		neg_r_e = tf.nn.embedding_lookup(self.rel_embeddings, neg_r)
-		#Getting the required parameters to transfer entity embeddings, e.g. pos_h_t, pos_t_t and pos_r_t are transfer parameters for positive triples
-		pos_h_t = tf.nn.embedding_lookup(self.ent_transfer, pos_h)
-		pos_t_t = tf.nn.embedding_lookup(self.ent_transfer, pos_t)
-		pos_r_t = tf.nn.embedding_lookup(self.rel_transfer, pos_r)
-		neg_h_t = tf.nn.embedding_lookup(self.ent_transfer, neg_h)
-		neg_t_t = tf.nn.embedding_lookup(self.ent_transfer, neg_t)
-		neg_r_t = tf.nn.embedding_lookup(self.rel_transfer, neg_r)
-		#Calculating score functions for all positive triples and negative triples
-		p_h = self._transfer(pos_h_e, pos_h_t, pos_r_t)
-		p_t = self._transfer(pos_t_e, pos_t_t, pos_r_t)
-		p_r = pos_r_e
-		n_h = self._transfer(neg_h_e, neg_h_t, neg_r_t)
-		n_t = self._transfer(neg_t_e, neg_t_t, neg_r_t)
-		n_r = neg_r_e
-		#The shape of _p_score is (batch_size, 1, rel_size)
-		#The shape of _n_score is (batch_size, negative_ent + negative_rel, rel_size)
-		_p_score = self._calc(p_h, p_t, p_r)
-		_n_score = self._calc(n_h, n_t, n_r)
-		#The shape of p_score is (batch_size, 1)
-		#The shape of n_score is (batch_size, 1)
-		p_score =  tf.reduce_sum(tf.reduce_mean(_p_score, 1, keepdims = False), 1, keepdims = True)
-		n_score =  tf.reduce_sum(tf.reduce_mean(_n_score, 1, keepdims = False), 1, keepdims = True)
+		#Getting the required parameters to transfer entity embeddings
+		#The shapes of pos_h_p, pos_t_p are (batch_size, 1, ent_size)
+		#The shape of pos_r_p is (batch_size, 1, rel_size)
+		#The shapes of neg_h_p, neg_t_p are (batch_size, negative_ent + negative_rel, ent_size)
+		#The shape of neg_r_p is (batch_size, negative_ent + negative_rel, rel_size)
+		pos_h_p = tf.nn.embedding_lookup(self.ent_transfer, pos_h)
+		pos_t_p = tf.nn.embedding_lookup(self.ent_transfer, pos_t)
+		pos_r_p = tf.nn.embedding_lookup(self.rel_transfer, pos_r)
+		neg_h_p = tf.nn.embedding_lookup(self.ent_transfer, neg_h)
+		neg_t_p = tf.nn.embedding_lookup(self.ent_transfer, neg_t)
+		neg_r_p = tf.nn.embedding_lookup(self.rel_transfer, neg_r)
+		#Transfering entity embeddings into the relation space.
+		#The shapes of pos_h_t, pos_t_t are (batch_size, 1, rel_size)
+		#The shapes of neg_h_t, neg_t_t are (batch_size, negative_ent + negative_rel, rel_size)
+		pos_h_t = self._transfer(pos_h_e, pos_h_p, pos_r_p)
+		pos_t_t = self._transfer(pos_t_e, pos_t_p, pos_r_p)
+		neg_h_t = self._transfer(neg_h_e, neg_h_p, neg_r_p)
+		neg_t_t = self._transfer(neg_t_e, neg_t_p, neg_r_p)
+		#The shape of pos_score is (batch_size, 1, 1)
+		#The shape of neg_score is (batch_size, negative_ent + negative_rel, 1)
+		pos_score = self._calc(pos_h_t, pos_t_t, pos_r_e, config.pnorm)
+		neg_score = self._calc(neg_h_t, neg_t_t, neg_r_e, config.pnorm)
 		#Calculating loss to get what the framework will optimize
-		self.loss = tf.reduce_sum(tf.maximum(p_score - n_score + config.margin, 0))
+		pairs_score = tf.maximum(pos_score - neg_score + config.margin, 0)
+		self.loss = tf.reduce_sum(pairs_score)
 
 	def predict_def(self):
 		config = self.get_config()
-		predict_h, predict_t, predict_r = self.get_predict_instance()
-		predict_h_e = tf.nn.embedding_lookup(self.ent_embeddings, predict_h)
-		predict_t_e = tf.nn.embedding_lookup(self.ent_embeddings, predict_t)
-		predict_r_e = tf.nn.embedding_lookup(self.rel_embeddings, predict_r)
-		predict_h_t = tf.nn.embedding_lookup(self.ent_transfer, predict_h)
-		predict_t_t = tf.nn.embedding_lookup(self.ent_transfer, predict_t)
-		predict_r_t = tf.nn.embedding_lookup(self.rel_transfer, predict_r)
-		h_e = self._transfer(predict_h_e, predict_h_t, predict_r_t)
-		t_e = self._transfer(predict_t_e, predict_t_t, predict_r_t)
-		r_e = predict_r_e
-		self.predict = tf.reduce_sum(self._calc(h_e, t_e, r_e), 1, keepdims = True)
+		pre_h, pre_t, pre_r = self.get_predict_instance()
+		pre_h_e = tf.nn.embedding_lookup(self.ent_embeddings, pre_h)
+		pre_t_e = tf.nn.embedding_lookup(self.ent_embeddings, pre_t)
+		pre_r_e = tf.nn.embedding_lookup(self.rel_embeddings, pre_r)
+		pre_h_p = tf.nn.embedding_lookup(self.ent_transfer, pre_h)
+		pre_t_p = tf.nn.embedding_lookup(self.ent_transfer, pre_t)
+		pre_r_p = tf.nn.embedding_lookup(self.rel_transfer, pre_r)
+		#Transfering entity embeddings into the relation space.
+		#The shapes of pre_h_t, pre_t_t are (?, rel_size)
+		pre_h_t = self._transfer(pre_h_e, pre_h_p, pre_r_p)
+		pre_t_t = self._transfer(pre_t_e, pre_t_p, pre_r_p)
+		#The shape of pre_score is (?, 1)
+		pre_score = self._calc(pre_h_t, pre_t_t, pre_r_e, config.pnorm)
+		self.predict = pre_score
