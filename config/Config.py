@@ -38,6 +38,7 @@ class Config(object):
 		self.workThreads = 1
 		self.alpha = 0.001
 		self.lmbda = 0.000
+		self.pnorm = (1, 1)
 		self.log_on = 1
 		self.exportName = None
 		self.importName = None
@@ -133,6 +134,9 @@ class Config(object):
 
 	def set_lmbda(self, lmbda):
 		self.lmbda = lmbda
+
+	def set_pnorm(self, pnorm):
+		self.pnorm = pnorm
 
 	def set_optimizer(self, optimizer):
 		self.optimizer = optimizer
