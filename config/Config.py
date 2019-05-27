@@ -414,7 +414,7 @@ class Config(object):
 		Returns:
 			list: k possible tail entity ids 	  	
 		'''
-		self.init_link_prediction()
+		#self.init_link_prediction()
 		if self.importName != None:
 			self.restore_tensorflow()
 		test_h = np.array([h] * self.entTotal)
@@ -436,7 +436,7 @@ class Config(object):
 		Returns:
 			list: k possible relation ids
 		'''
-		self.init_link_prediction()
+		#self.init_link_prediction()
 		if self.importName != None:
 			self.restore_tensorflow()
 		test_h = np.array([h] * self.relTotal)
@@ -459,7 +459,7 @@ class Config(object):
 		Returns:
 			true: if the triple is correct
 		'''
-		self.init_triple_classification()
+		#self.init_triple_classification()
 		if self.importName != None:
 			self.restore_tensorflow()
 		res = self.test_step(np.array([h]), np.array([t]), np.array([r]))
