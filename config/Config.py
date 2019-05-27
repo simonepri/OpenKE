@@ -343,7 +343,8 @@ class Config(object):
 						elif wait_steps < patience:
 							wait_steps += 1
 						else:
-							print('Early stopping. Losses have not been improved enough in {} times'.format(patience))
+							if self.log_on:
+								print('Early stopping. Losses have not been improved enough in {} times'.format(patience))
 							break
 				if self.exportName != None:
 					self.save_tensorflow()
@@ -398,7 +399,8 @@ class Config(object):
 		test_r = np.array([r] * self.entTotal)
 		test_t = np.array([t] * self.entTotal)
 		res = self.test_step(test_h, test_t, test_r).reshape(-1).argsort()[:k]
-		print(res)
+		if self.log_on:
+			print(res)
 		return res
 
 	def predict_tail_entity(self, h, r, k):
@@ -419,7 +421,8 @@ class Config(object):
 		test_r = np.array([r] * self.entTotal)
 		test_t = np.array(range(self.entTotal))
 		res = self.test_step(test_h, test_t, test_r).reshape(-1).argsort()[:k]
-		print(res)
+		if self.log_on:
+			print(res)
 		return res
 
 	def predict_relation(self, h, t, k):
@@ -440,7 +443,8 @@ class Config(object):
 		test_r = np.array(range(self.relTotal))
 		test_t = np.array([t] * self.relTotal)
 		res = self.test_step(test_h, test_t, test_r).reshape(-1).argsort()[:k]
-		print(res)
+		if self.log_on:
+			print(res)
 		return res
 
 	def predict_triple(self, h, t, r, thresh = None):
@@ -451,22 +455,28 @@ class Config(object):
 			t (int): tail entity id
 			r (int): relation id
 			thresh (fload): threshold for the triple
+
+		Returns:
+			true: if the triple is correct
 		'''
 		self.init_triple_classification()
 		if self.importName != None:
 			self.restore_tensorflow()
 		res = self.test_step(np.array([h]), np.array([t]), np.array([r]))
 		if thresh != None:
-			if res < thresh:
-				print("triple (%d,%d,%d) is correct" % (h, t, r))
-			else:
-				print("triple (%d,%d,%d) is wrong" % (h, t, r))
-			return
+			if self.log_on:
+				if res < thresh:
+					print("triple (%d,%d,%d) is correct" % (h, t, r))
+				else:
+					print("triple (%d,%d,%d) is wrong" % (h, t, r))
+			return res < thresh
 		self.lib.getValidBatch(self.valid_pos_h_addr, self.valid_pos_t_addr, self.valid_pos_r_addr, self.valid_neg_h_addr, self.valid_neg_t_addr, self.valid_neg_r_addr)
 		res_pos = self.test_step(self.valid_pos_h, self.valid_pos_t, self.valid_pos_r)
 		res_neg = self.test_step(self.valid_neg_h, self.valid_neg_t, self.valid_neg_r)
 		self.lib.getBestThreshold(self.relThresh_addr, res_pos.__array_interface__['data'][0], res_neg.__array_interface__['data'][0])
-		if res < self.relThresh[r]:
-			print("triple (%d,%d,%d) is correct" % (h, t, r))
-		else:
-			print("triple (%d,%d,%d) is wrong" % (h, t, r))
+		if self.log_on:
+			if res < self.relThresh[r]:
+				print("triple (%d,%d,%d) is correct" % (h, t, r))
+			else:
+				print("triple (%d,%d,%d) is wrong" % (h, t, r))
+		return res < self.relThresh[r]
